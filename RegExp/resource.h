@@ -92,18 +92,16 @@
 #define IDC_APPEND                      1019
 #define IDC_SAVE                        1020
 #define IDC_LOAD                        1021
-#define IDC_PROGRESS1                   1022
 #define IDC_NAME                        1023
 #define IDC_VALUE                       1024
 #define IDC_STRING                      1025
 #define IDC_EXPANDSTRING                1026
 #define IDC_FILE                        1028
-#define IDC_BUTTON3                     1029
 #define IDC_FOLDER                      1029
 #define IDC_DECIMAL                     1030
 #define IDC_HEX                         1031
 #define IDC_BINARY                      1032
-#define IDC_BUTTON1                     1033
+#define IDC_BUTTON1                     999
 #define IDC_COLOR                       1033
 #define IDC_BUFFERSIZE                  1035
 #define IDC_EXPORT_STD                  1036
@@ -119,6 +117,9 @@
 #define IDC_HANDLECOUNT                 1050
 #define IDC_FILTER                      1051
 #define IDC_CLEAR                       1052
+#define IDC_DELETE                      1053
+#define IDC_BUTTON2                     1054
+#define IDC_COPY                        1054
 #define ID_FILE_RUNASADMIN              32771
 #define ID_OPTIONS_ALWAYSONTOP          32772
 #define ID_VIEW_GOBACK                  32779
@@ -198,7 +199,7 @@
 #define _APS_NO_MFC                     1
 #define _APS_NEXT_RESOURCE_VALUE        181
 #define _APS_NEXT_COMMAND_VALUE         32884
-#define _APS_NEXT_CONTROL_VALUE         1053
+#define _APS_NEXT_CONTROL_VALUE         1055
 #define _APS_NEXT_SYMED_VALUE           115
 #endif
 #endif

@@ -9,11 +9,10 @@
 class CBinaryValueDlg :
 	public CDialogImpl<CBinaryValueDlg>,
 	public CDialogHelper<CBinaryValueDlg>,
-	public CAutoUpdateUI<CBinaryValueDlg>,
 	public CDynamicDialogLayout<CBinaryValueDlg> {
 public:
 	enum { IDD = IDD_BINVALUE };
-	enum { ID_DATA_BYTE = 500, ID_LINE = 520 };
+	enum { ID_DATA_BYTE = 30000, ID_LINE = 30020 };
 
 	CBinaryValueDlg(RegistryKey& key, PCWSTR name, bool readOnly, IMainFrame* frame);
 
@@ -24,15 +23,14 @@ public:
 		MESSAGE_HANDLER(WM_SIZE, OnSize)
 		MESSAGE_HANDLER(WM_INITDIALOG, OnInitDialog)
 		MESSAGE_HANDLER(WM_DESTROY, OnDestroy)
+		COMMAND_RANGE_HANDLER(ID_DATA_BYTE, ID_DATA_BYTE + 3, OnDataSize)
+		COMMAND_RANGE_HANDLER(ID_HEX_8BYTES, ID_HEX_32BYTES, OnBytesPerLine)
 		COMMAND_ID_HANDLER(IDOK, OnCloseCmd)
 		COMMAND_ID_HANDLER(IDCANCEL, OnCloseCmd)
 		NOTIFY_CODE_HANDLER(HCN_SIZECHANGED, OnHexBufferSizeChanged)
 		NOTIFY_CODE_HANDLER(TBN_DROPDOWN, OnToolBarDropdown)
-		COMMAND_RANGE_HANDLER(ID_DATA_BYTE, ID_DATA_BYTE + 3, OnDataSize)
-		COMMAND_RANGE_HANDLER(ID_HEX_8BYTES, ID_HEX_32BYTES, OnBytesPerLine)
 		CHAIN_MSG_MAP(CDynamicDialogLayout<CBinaryValueDlg>)
-		CHAIN_MSG_MAP(CAutoUpdateUI<CBinaryValueDlg>)
-		REFLECT_NOTIFICATIONS_EX()
+		REFLECT_NOTIFICATIONS()
 	END_MSG_MAP()
 
 	// Handler prototypes (uncomment arguments if needed):

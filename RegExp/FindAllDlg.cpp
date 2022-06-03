@@ -3,22 +3,24 @@
 #include "FindAllDlg.h"
 #include "SortHelper.h"
 #include "Helpers.h"
+#include <ListViewhelper.h>
+#include <ThemeHelper.h>
+#include <ClipboardHelper.h>
 
 CFindAllDlg::CFindAllDlg(IMainFrame* frame) : m_pFrame(frame) {
 }
 
 LRESULT CFindAllDlg::OnCloseCmd(WORD, WORD wID, HWND, BOOL&) {
     if (m_Searcher.IsRunning()) {
-        if (AtlMessageBox(m_hWnd, L"Search is still working. Closing this window will cancel the search. Continue?",
+        if (AtlMessageBox(m_hWnd, L"Search is still working. Closing this window will cancel the search. Close anyway?",
             IDS_APP_TITLE, MB_OKCANCEL | MB_ICONWARNING | MB_DEFBUTTON2) == IDNO)
             return 0;
 
         m_Searcher.Cancel();
-        m_Searcher.WaitForCompletion();
     }
 
 	UpdateOptions();
-	EndDialog(wID);
+    ShowWindow(SW_HIDE);
 	return 0;
 }
 
@@ -37,6 +39,10 @@ void CFindAllDlg::UpdateUI() {
 
 void CFindAllDlg::Cancel() {
     m_Searcher.Cancel();
+}
+
+void CFindAllDlg::OnFinalMessage(HWND) {
+    delete this;
 }
 
 CString CFindAllDlg::GetColumnText(HWND, int row, int col) const {
@@ -71,31 +77,28 @@ void CFindAllDlg::DoSort(const SortInfo* si) {
 
     auto compare = [&](auto& i1, auto& i2) {
         switch (si->SortColumn) {
-            case 0: return SortHelper::Sort(i1.Path, i2.Path, si->SortColumn);
-            case 1: return SortHelper::Sort(i1.Name, i2.Name, si->SortColumn);
-            case 2: return SortHelper::Sort(i1.Data, i2.Data, si->SortColumn);
+            case 0: return SortHelper::Sort(i1.Path, i2.Path, si->SortAscending);
+            case 1: return SortHelper::Sort(i1.Name, i2.Name, si->SortAscending);
+            case 2: return SortHelper::Sort(i1.Data, i2.Data, si->SortAscending);
         }
         return false;
     };
-    std::sort(m_Items.begin(), m_Items.end(), compare);
+    std::ranges::sort(m_Items, compare);
 }
 
-BOOL CFindAllDlg::OnDoubleClickList(HWND, int row, int, const POINT&) {
+bool CFindAllDlg::OnDoubleClickList(HWND, int row, int, const POINT&) {
     if (row < 0)
-        return FALSE;
+        return false;
 
     auto& item = m_Items[row];
-    m_Searcher.Cancel();
     CWaitCursor wait;
-    ShowWindow(SW_HIDE);
     if (m_pFrame->GoToItem(item.Path, item.Name, item.Data)) {
-        EndDialog(IDOK);
+        // keep dialog alive
+        return true;
     }
     else {
-        ShowWindow(SW_SHOW);
         AtlMessageBox(m_hWnd, L"Unable to locate item", IDS_APP_TITLE, MB_ICONERROR);
     }
-    m_Searcher.WaitForCompletion();
     return 0;
 }
 
@@ -231,7 +234,70 @@ LRESULT CFindAllDlg::OnSearchComplete(UINT msg, WPARAM cancelled, LPARAM, BOOL&)
     GetDlgItem(IDC_FIND).EnableWindow();
     GetDlgItem(IDC_CANCEL).EnableWindow(FALSE);
     m_Progress.ShowWindow(SW_HIDE);
-    if (cancelled)
-        AtlMessageBox(m_hWnd, L"Search complete.", IDS_APP_TITLE, MB_ICONINFORMATION);
+    return 0;
+}
+
+LRESULT CFindAllDlg::OnSaveResults(WORD, WORD wID, HWND, BOOL&) {
+    CSimpleFileDialog dlg(FALSE, L"txt", nullptr, OFN_EXPLORER | OFN_ENABLESIZING | OFN_OVERWRITEPROMPT,
+        L"Text Files (*.txt)\0*.txt\0All Files\0*.*\0", m_hWnd);
+    ThemeHelper::Suspend();
+    if (dlg.DoModal() == IDOK) {
+        CString text;
+        for (int i = 0; i < (int)m_Items.size(); i++)
+            text += GetColumnText(m_List, i, 0) + L"\t" + GetColumnText(m_List, i, 1) + L"\t" + GetColumnText(m_List, i, 2) + L"\r\n";
+        if (!Helpers::WriteToFile(dlg.m_szFileName, text))
+            m_pFrame->DisplayError(L"Error saving results");
+    }
+    ThemeHelper::Resume();
+    return 0;
+}
+
+LRESULT CFindAllDlg::OnLoadResults(WORD, WORD wID, HWND, BOOL&) {
+    CSimpleFileDialog dlg(TRUE, L"txt", nullptr, OFN_EXPLORER | OFN_ENABLESIZING,
+        L"Text Files (*.txt)\0*.txt\0All Files\0*.*\0", m_hWnd);
+    ThemeHelper::Suspend();
+    if (dlg.DoModal() == IDOK) {
+        CString text;
+        if(!Helpers::ReadFileText(dlg.m_szFileName, text))
+            m_pFrame->DisplayError(L"Error loading results");
+        else {
+            if (IsDlgButtonChecked(IDC_APPEND) == BST_UNCHECKED) {
+                m_Items.clear();
+            }
+            int cr = 0, start = 0;
+            while ((cr = text.Find(L"\r\n", start)) > 0) {
+                ListItem item;
+                item.Path = text.Tokenize(L"\t", start);
+                item.Name = text.Tokenize(L"\t", start);
+                item.Data = text.Tokenize(L"\t", start);
+                m_Items.push_back(std::move(item));
+                start = cr + 2;
+            }
+            m_List.SetItemCountEx((int)m_Items.size(), LVSICF_NOINVALIDATEALL | LVSICF_NOSCROLL);
+            m_List.RedrawItems(m_List.GetTopIndex(), m_List.GetTopIndex() + m_List.GetCountPerPage());
+        }
+    }
+    ThemeHelper::Resume();
+    return 0;
+}
+
+LRESULT CFindAllDlg::OnCopy(WORD, WORD wID, HWND, BOOL&) {
+    ClipboardHelper::CopyText(m_hWnd, m_List.GetSelectedCount() == 0 ? 
+        ListViewHelper::GetAllRowsAsString(m_List) : ListViewHelper::GetSelectedRowsAsString(m_List));
+    return 0;
+}
+
+LRESULT CFindAllDlg::OnDelete(WORD, WORD wID, HWND, BOOL&) {
+    if (m_List.GetSelectedCount() == 0)
+        m_Items.clear();
+    else {
+        int n = -1, offset = 0;
+        while ((n = m_List.GetNextItem(n, LVIS_SELECTED)) >= 0) {
+            m_Items.erase(m_Items.begin() + n - offset);
+            offset++;
+        }
+    }
+    m_List.SetItemCountEx((int)m_Items.size(), LVSICF_NOINVALIDATEALL | LVSICF_NOSCROLL);
+    m_List.RedrawItems(m_List.GetTopIndex(), m_List.GetTopIndex() + m_List.GetCountPerPage());
     return 0;
 }

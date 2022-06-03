@@ -17,16 +17,17 @@ public:
 
 	const UINT WM_SEARCH_COMPLETE = WM_APP + 1;
 
-	CFindAllDlg(IMainFrame* frame);
+	explicit CFindAllDlg(IMainFrame* frame);
 
 	void UpdateUI();
 	void Cancel();
+	void OnFinalMessage(HWND) override;
 
 	CString GetColumnText(HWND, int row, int col) const;
 	int GetRowImage(HWND, int row, int) const;
 	void DoSort(const SortInfo* si);
 
-	BOOL OnDoubleClickList(HWND, int row, int, const POINT&);
+	bool OnDoubleClickList(HWND, int row, int, const POINT&);
 
 	BEGIN_MSG_MAP(CFindAllDlg)
 		MESSAGE_HANDLER(WM_INITDIALOG, OnInitDialog)
@@ -34,6 +35,10 @@ public:
 		COMMAND_ID_HANDLER(IDC_FIND, OnFind)
 		COMMAND_ID_HANDLER(IDCANCEL, OnCloseCmd)
 		COMMAND_ID_HANDLER(IDC_CANCEL, OnCancel)
+		COMMAND_ID_HANDLER(IDC_SAVE, OnSaveResults)
+		COMMAND_ID_HANDLER(IDC_LOAD, OnLoadResults)
+		COMMAND_ID_HANDLER(IDC_DELETE, OnDelete)
+		COMMAND_ID_HANDLER(IDC_COPY, OnCopy)
 		COMMAND_CODE_HANDLER(EN_CHANGE, OnTextChanged)
 		COMMAND_CODE_HANDLER(BN_CLICKED, OnClick)
 		MESSAGE_HANDLER(WM_DESTROY, OnDestroy)
@@ -65,6 +70,10 @@ private:
 	LRESULT OnTextChanged(WORD /*wNotifyCode*/, WORD wID, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
 	LRESULT OnClick(WORD /*wNotifyCode*/, WORD wID, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
 	LRESULT OnSearchComplete(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/, BOOL& /*bHandled*/);
+	LRESULT OnSaveResults(WORD /*wNotifyCode*/, WORD wID, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
+	LRESULT OnLoadResults(WORD /*wNotifyCode*/, WORD wID, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
+	LRESULT OnCopy(WORD /*wNotifyCode*/, WORD wID, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
+	LRESULT OnDelete(WORD /*wNotifyCode*/, WORD wID, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
 
 	IMainFrame* m_pFrame;
 	RegistrySearcher m_Searcher;
