@@ -29,6 +29,7 @@
 #include "Helpers.h"
 #include "RegExportImport.h"
 #include "ImageIconCache.h"
+#include "ManageLocationsDlg.h"
 
 BOOL CMainFrame::PreTranslateMessage(MSG* pMsg) {
 	if (m_FindDlg.IsWindowVisible() && ::GetActiveWindow() == m_FindDlg && m_FindDlg.IsDialogMessage(pMsg))
@@ -71,7 +72,7 @@ DWORD CMainFrame::OnSubItemPrePaint(int, LPNMCUSTOMDRAW cd) {
 		if (!item.Key) {
 			CString nodeText;
 			m_Tree.GetItemText(m_Tree.GetSelectedItem(), nodeText);
-			if ((item.Type == REG_SZ || item.Type == REG_DWORD) && 
+			if ((item.Type == REG_SZ || item.Type == REG_DWORD) &&
 				(item.Name.Find(L"Color") >= 0 || item.Name.Find(L"Background") >= 0 || item.Name.Find(L"Foreground") >= 0 || nodeText.Find(L"Color") >= 0)) {
 				COLORREF color = CLR_INVALID;
 				if (item.Type == REG_DWORD)
@@ -105,10 +106,6 @@ void CMainFrame::SetStatusText(PCWSTR text) {
 
 HWND CMainFrame::GetHwnd() const {
 	return m_hWnd;
-}
-
-AppSettings& CMainFrame::GetSettings() {
-	return m_Settings;
 }
 
 LRESULT CMainFrame::OnFindUpdate(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM lParam, BOOL& /*bHandled*/) {
@@ -265,8 +262,8 @@ void CMainFrame::DoSort(const SortInfo* si) {
 		return false;
 	};
 
-	m_Items.Sort(m_Settings.ShowKeysInList() ? 1 : 0, m_Items.size(), compare);
-	//std::sort(m_Items.begin() + (m_Settings.ShowKeysInList() ? 1 : 0), m_Items.end(), compare);
+	m_Items.Sort(AppSettings::Get().ShowKeysInList() ? 1 : 0, m_Items.size(), compare);
+	//std::sort(m_Items.begin() + (AppSettings::Get().ShowKeysInList() ? 1 : 0), m_Items.end(), compare);
 }
 
 bool CMainFrame::IsSortable(HWND h, int col) const {
@@ -337,18 +334,18 @@ LRESULT CMainFrame::OnCreate(UINT, WPARAM, LPARAM, BOOL&) {
 
 	::ChangeWindowMessageFilterEx(m_hWnd, WM_COPYDATA, MSGFLT_ALLOW, nullptr);
 
-	if (m_Settings.Load(L"Software\\ScorpioSoftware\\TotalRegistry")) {
-		m_ReadOnly = m_Settings.ReadOnly();
-		m_LastKey = m_Settings.LastKey().c_str();
+	m_Locations.Load(L"Software\\ScorpioSoftware\\TotalRegistry");
+	if (AppSettings::Get().Load(L"Software\\ScorpioSoftware\\TotalRegistry")) {
+		m_ReadOnly = AppSettings::Get().ReadOnly();
+		m_LastKey = AppSettings::Get().LastKey().c_str();
 	}
-	m_Locations.Load(L"Software\\ScorpioSoftware\\RegExp");
 
 	InitDarkTheme();
-	ThemeHelper::SetCurrentTheme(m_Settings.DarkMode() ? m_DarkTheme : m_DefaultTheme);
+	ThemeHelper::SetCurrentTheme(AppSettings::Get().DarkMode() ? m_DarkTheme : m_DefaultTheme);
 	InitLocations();
 
 	m_hSingleInstMutex = ::CreateMutex(nullptr, FALSE, L"RegExpSingleInstanceMutex");
-	if (m_Settings.SingleInstance() && m_hSingleInstMutex) {
+	if (AppSettings::Get().SingleInstance() && m_hSingleInstMutex) {
 		if (::GetLastError() == ERROR_ALREADY_EXISTS) {
 			//
 			// not first instance
@@ -437,7 +434,7 @@ LRESULT CMainFrame::OnCreate(UINT, WPARAM, LPARAM, BOOL&) {
 		WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN, 0);
 
 	m_Tree.Create(m_MainSplitter, rcDefault, nullptr, WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN |
-		TVS_HASBUTTONS | TVS_LINESATROOT | TVS_HASLINES | TVS_SHOWSELALWAYS | TVS_EDITLABELS, WS_EX_CLIENTEDGE, TreeId);
+		TVS_HASBUTTONS | TVS_LINESATROOT | TVS_HASLINES | TVS_SHOWSELALWAYS | TVS_EDITLABELS, 0, TreeId);
 	m_Tree.SetExtendedStyle(TVS_EX_DOUBLEBUFFER | TVS_EX_RICHTOOLTIP, 0);
 
 	CImageList images;
@@ -453,7 +450,7 @@ LRESULT CMainFrame::OnCreate(UINT, WPARAM, LPARAM, BOOL&) {
 	m_Tree.SetImageList(images, TVSIL_NORMAL);
 
 	m_List.Create(m_MainSplitter, rcDefault, nullptr, WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN
-		| LVS_OWNERDATA | LVS_REPORT | LVS_SHOWSELALWAYS | LVS_SHAREIMAGELISTS | LVS_EDITLABELS, WS_EX_CLIENTEDGE);
+		| LVS_OWNERDATA | LVS_REPORT | LVS_SHOWSELALWAYS | LVS_SHAREIMAGELISTS | LVS_EDITLABELS, 0);
 	m_List.SetExtendedListViewStyle(LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_INFOTIP);
 	m_List.SetImageList(images, LVSIL_SMALL);
 
@@ -483,19 +480,19 @@ LRESULT CMainFrame::OnCreate(UINT, WPARAM, LPARAM, BOOL&) {
 	//
 	// update UI based on settings
 	//
-	UISetCheck(ID_OPTIONS_SHOWEXTRAHIVES, m_Settings.ShowExtraHives());
-	UISetCheck(ID_VIEW_SHOWKEYSINLIST, m_Settings.ShowKeysInList());
-	UISetCheck(ID_OPTIONS_ALWAYSONTOP, m_Settings.AlwaysOnTop());
-	UISetCheck(ID_OPTIONS_REPLACEREGEDIT, m_Settings.ReplaceRegEdit());
-	UISetCheck(ID_OPTIONS_DARKMODE, m_Settings.DarkMode());
-	UISetCheck(ID_OPTIONS_ALLOWSINGLEINSTANCE, m_Settings.SingleInstance());
-	UISetCheck(ID_VIEW_ADDRESSBAR, m_Settings.ViewAddressBar());
-	UISetCheck(ID_VIEW_TOOLBAR, m_Settings.ViewToolBar());
-	UISetCheck(ID_VIEW_STATUSBAR, m_Settings.ViewStatusBar());
+	UISetCheck(ID_OPTIONS_SHOWEXTRAHIVES, AppSettings::Get().ShowExtraHives());
+	UISetCheck(ID_VIEW_SHOWKEYSINLIST, AppSettings::Get().ShowKeysInList());
+	UISetCheck(ID_OPTIONS_ALWAYSONTOP, AppSettings::Get().AlwaysOnTop());
+	UISetCheck(ID_OPTIONS_REPLACEREGEDIT, AppSettings::Get().ReplaceRegEdit());
+	UISetCheck(ID_OPTIONS_DARKMODE, AppSettings::Get().DarkMode());
+	UISetCheck(ID_OPTIONS_ALLOWSINGLEINSTANCE, AppSettings::Get().SingleInstance());
+	UISetCheck(ID_VIEW_ADDRESSBAR, AppSettings::Get().ViewAddressBar());
+	UISetCheck(ID_VIEW_TOOLBAR, AppSettings::Get().ViewToolBar());
+	UISetCheck(ID_VIEW_STATUSBAR, AppSettings::Get().ViewStatusBar());
 
-	SetDarkMode(m_Settings.DarkMode());
+	SetDarkMode(AppSettings::Get().DarkMode());
 
-	auto lf = m_Settings.Font();
+	auto lf = AppSettings::Get().Font();
 	if (lf.lfHeight) {
 		m_Font.CreateFontIndirect(&lf);
 		m_List.SetFont(m_Font);
@@ -514,12 +511,13 @@ LRESULT CMainFrame::OnCreate(UINT, WPARAM, LPARAM, BOOL&) {
 LRESULT CMainFrame::OnDestroy(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/, BOOL& bHandled) {
 	if (m_HandlesDlg)
 		m_HandlesDlg.DestroyWindow();
+
 	ImageIconCache::Get().Destroy();
 
 	WINDOWPLACEMENT wp;
 	wp.length = sizeof(wp);
 	if (GetWindowPlacement(&wp)) {
-		m_Settings.MainWindowPlacement(wp);
+		AppSettings::Get().MainWindowPlacement(wp);
 	}
 	//
 	// gather bookmarks
@@ -527,10 +525,12 @@ LRESULT CMainFrame::OnDestroy(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*
 	std::vector<CString> bookmarks;
 	for (auto& [name, _] : TreeHelper(m_Tree).GetChildItems(m_hBookmarks))
 		bookmarks.push_back(name);
-	m_Settings.Bookmarks(bookmarks);
+	AppSettings::Get().Bookmarks(bookmarks);
 
-	m_Settings.ReadOnly(m_ReadOnly);
-	m_Settings.Save();
+	AppSettings::Get().ReadOnly(m_ReadOnly);
+	AppSettings::Get().Save();
+	m_Locations.Save();
+
 	m_FindDlg.Cancel();
 	if (m_FindDlg)
 		m_FindDlg.DestroyWindow();
@@ -571,12 +571,12 @@ LRESULT CMainFrame::OnShowWindow(UINT, WPARAM show, LPARAM, BOOL&) {
 	static bool shown = false;
 	if (show && !shown) {
 		shown = true;
-		auto wp = m_Settings.MainWindowPlacement();
+		auto wp = AppSettings::Get().MainWindowPlacement();
 		if (wp.showCmd != SW_HIDE) {
 			SetWindowPlacement(&wp);
 			UpdateLayout();
 		}
-		if (m_Settings.AlwaysOnTop())
+		if (AppSettings::Get().AlwaysOnTop())
 			SetWindowPos(HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
 	}
 	return 0;
@@ -598,7 +598,7 @@ LRESULT CMainFrame::OnAbout(WORD, WORD, HWND, BOOL&) {
 
 LRESULT CMainFrame::OnBuildTree(UINT, WPARAM, LPARAM, BOOL&) {
 	InitTree();
-	auto showExtra = m_Settings.ShowExtraHives();
+	auto showExtra = AppSettings::Get().ShowExtraHives();
 	m_Tree.LockWindowUpdate();
 
 	int i = 0;
@@ -640,7 +640,7 @@ LRESULT CMainFrame::OnTreeSelChanged(int, LPNMHDR hdr, BOOL&) {
 		m_UpdateNoDelay = false;
 		UpdateList(tv->action != TVC_UNKNOWN);
 	}
-	else if(tv->action == TVC_BYKEYBOARD) {
+	else if (tv->action == TVC_BYKEYBOARD) {
 		//
 		// short delay in case the user is scrolling fast
 		//
@@ -689,16 +689,16 @@ LRESULT CMainFrame::OnTreeItemExpanding(int, LPNMHDR hdr, BOOL&) {
 }
 
 LRESULT CMainFrame::OnShowExtraHives(WORD, WORD id, HWND, BOOL&) {
-	auto show = m_Settings.ShowExtraHives();
-	m_Settings.ShowExtraHives(!show);
+	auto show = AppSettings::Get().ShowExtraHives();
+	AppSettings::Get().ShowExtraHives(!show);
 	UISetCheck(id, !show);
 
 	return 0;
 }
 
 LRESULT CMainFrame::OnShowKeysInList(WORD, WORD id, HWND, BOOL&) {
-	m_Settings.ShowKeysInList(!m_Settings.ShowKeysInList());
-	UISetCheck(id, m_Settings.ShowKeysInList());
+	AppSettings::Get().ShowKeysInList(!AppSettings::Get().ShowKeysInList());
+	UISetCheck(id, AppSettings::Get().ShowKeysInList());
 	UpdateList();
 
 	return 0;
@@ -707,7 +707,7 @@ LRESULT CMainFrame::OnShowKeysInList(WORD, WORD id, HWND, BOOL&) {
 LRESULT CMainFrame::OnAlwaysOnTop(WORD, WORD id, HWND, BOOL&) {
 	bool top = !(GetExStyle() & WS_EX_TOPMOST);
 	SetWindowPos(top ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
-	m_Settings.AlwaysOnTop(top);
+	AppSettings::Get().AlwaysOnTop(top);
 	UISetCheck(id, top);
 
 	return 0;
@@ -1435,7 +1435,7 @@ LRESULT CMainFrame::OnViewAddressBar(WORD, WORD id, HWND, BOOL&) {
 
 LRESULT CMainFrame::OnViewToolBar(WORD, WORD id, HWND, BOOL&) {
 	bool show;
-	m_Settings.ViewToolBar(show = !m_Settings.ViewToolBar());
+	AppSettings::Get().ViewToolBar(show = !AppSettings::Get().ViewToolBar());
 	ShowBand(0, show);
 	UISetCheck(id, show);
 
@@ -1444,7 +1444,7 @@ LRESULT CMainFrame::OnViewToolBar(WORD, WORD id, HWND, BOOL&) {
 
 LRESULT CMainFrame::OnViewStatusBar(WORD, WORD id, HWND, BOOL&) {
 	bool show;
-	m_Settings.ViewStatusBar(show = !m_Settings.ViewStatusBar());
+	AppSettings::Get().ViewStatusBar(show = !AppSettings::Get().ViewStatusBar());
 	UISetCheck(id, show);
 	m_StatusBar.ShowWindow(show ? SW_SHOW : SW_HIDE);
 	UpdateLayout();
@@ -1500,7 +1500,7 @@ LRESULT CMainFrame::OnOptionsFont(WORD, WORD, HWND, BOOL&) {
 		m_Font.CreateFontIndirect(&lf);
 		m_List.SetFont(m_Font);
 		m_Tree.SetFont(m_Font);
-		m_Settings.Font(lf);
+		AppSettings::Get().Font(lf);
 	}
 	ThemeHelper::Resume();
 	return 0;
@@ -1509,9 +1509,9 @@ LRESULT CMainFrame::OnOptionsFont(WORD, WORD, HWND, BOOL&) {
 LRESULT CMainFrame::OnRestoreDefaultFont(WORD, WORD, HWND, BOOL&) {
 	m_List.SetFont(nullptr);
 	m_Tree.SetFont(nullptr);
-	if(m_Font)
+	if (m_Font)
 		m_Font.DeleteObject();
-	m_Settings.Font(LOGFONT{});
+	AppSettings::Get().Font(LOGFONT{});
 
 	return 0;
 }
@@ -1541,7 +1541,7 @@ LRESULT CMainFrame::OnJumpToHiveFile(WORD, WORD, HWND, BOOL&) {
 
 	WCHAR explorer[MAX_PATH];
 	::ExpandEnvironmentStrings(L"%systemroot%\\explorer.exe", explorer, _countof(explorer));
-	
+
 	auto win32Path = Helpers::GetWin32PathFromNTPath(it->Path.c_str());
 	::ShellExecute(nullptr, L"open", explorer,
 		L"/select,\"" + win32Path + L"\"", nullptr, SW_SHOWNORMAL);
@@ -1600,6 +1600,14 @@ LRESULT CMainFrame::OnDeleteBookmark(WORD, WORD, HWND, BOOL&) {
 	ATLASSERT((GetNodeData(hItem) & NodeType::Bookmark) == NodeType::Bookmark);
 	m_Tree.DeleteItem(hItem);
 
+	return 0;
+}
+
+LRESULT CMainFrame::OnManageLocations(WORD, WORD, HWND, BOOL&) {
+	CManageLocationsDlg dlg(this, m_Locations);
+	if (IDOK == dlg.DoModal()) {
+		InitLocations();
+	}
 	return 0;
 }
 
@@ -1835,7 +1843,7 @@ void CMainFrame::InitTree() {
 	::GetComputerName(name, &len);
 	m_hLocalRoot = InsertTreeItem(name + CString(L" (Local)"), 1, NodeType::Machine, TVI_ROOT, TVI_LAST);
 	m_hBookmarks = InsertTreeItem(L"Bookmarks", 15, NodeType::Bookmarks, m_hLocalRoot, TVI_LAST);
-	for (auto& bm : m_Settings.Bookmarks()) {
+	for (auto& bm : AppSettings::Get().Bookmarks()) {
 		InsertKeyItem(m_hBookmarks, bm, NodeType::Key | NodeType::Bookmark);
 	}
 	m_hStdReg = InsertTreeItem(L"Standard Registry", 0, NodeType::StandardRoot, m_hLocalRoot, TVI_LAST);
@@ -2060,7 +2068,7 @@ CString CMainFrame::GetValueDetails(const RegistryItem& item) const {
 					Helpers::GetWindowsDirectory(),
 				};
 				for (auto& path : paths)
-					if (ERROR_FILE_NOT_FOUND != ::RegLoadMUIString(m_CurrentKey.Get(), item.Name, text.GetBufferSetLength(512), 512, 
+					if (ERROR_FILE_NOT_FOUND != ::RegLoadMUIString(m_CurrentKey.Get(), item.Name, text.GetBufferSetLength(512), 512,
 						nullptr, REG_MUI_STRING_TRUNCATE, path.IsEmpty() ? nullptr : (PCWSTR)path))
 						break;
 			}
@@ -2285,17 +2293,7 @@ void CMainFrame::SetDarkMode(bool dark) {
 }
 
 HTREEITEM CMainFrame::GotoKey(const CString& path, bool knownToExist) {
-	CString spath(path);
-	spath.MakeUpper();
-	if (spath != L'\\') {
-		if (spath.Find(L'\\') < 0)
-			spath += L"\\";
-		spath.Replace(L"HKLM\\", L"HKEY_LOCAL_MACHINE\\");
-		spath.Replace(L"HKCU\\", L"HKEY_CURRENT_USER\\");
-		spath.Replace(L"HKCR\\", L"HKEY_CLASSES_ROOT\\");
-		spath.Replace(L"HKU\\", L"HKEY_USERS\\");
-		spath.Replace(L"HKCC\\", L"HKEY_CURRENT_CONFIG");
-	}
+	auto spath = Helpers::NormalizePath(path);
 	auto hItem = TreeHelper(m_Tree).FindItem(spath[0] == L'\\' ? m_hRealReg : m_hStdReg, spath);
 	if (!hItem || knownToExist) {
 		auto key = Registry::OpenKey(path, KEY_ENUMERATE_SUB_KEYS | KEY_QUERY_VALUE);
@@ -2333,6 +2331,8 @@ void CMainFrame::InitDarkTheme() {
 	m_DarkTheme.Name = L"Dark";
 	m_DarkTheme.Menu.BackColor = m_DarkTheme.BackColor;
 	m_DarkTheme.Menu.TextColor = m_DarkTheme.TextColor;
+	m_DarkTheme.StatusBar.BackColor = RGB(32, 0, 32);
+	m_DarkTheme.StatusBar.TextColor = m_DarkTheme.TextColor;
 }
 
 void CMainFrame::InitLocations() {
@@ -2341,34 +2341,37 @@ void CMainFrame::InitLocations() {
 	while (menu.DeleteMenu(2, MF_BYPOSITION))
 		;
 
-	const struct {
-		PCWSTR name;
-		PCWSTR path;
-	} locations[] = {
-		{ L"Services", LR"(HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services)" },
-		{ L"Hardware", LR"(HKEY_LOCAL_MACHINE\System\CurrentControlSet\Enum)" },
-		{ L"Device Classes", LR"(HKEY_LOCAL_MACHINE\System\CurrentControlSet\Control\Class)" },
-		{ L"Hive List", LR"(HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\hivelist)" },
-		{ L"Image File Execution Options", LR"(HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\Image File Execution Options)" },
-		{ LR"(Explorer Context Menu/HKEY_CLASSES_ROOT\*\shell)" },
-		{ LR"(Explorer Context Menu/HKEY_CLASSES_ROOT\*\shellex)" },
-		{ LR"(Explorer Context Menu/HKEY_CLASSES_ROOT\AllFileSystemObjects\ShellEx\ContextMenuHandlers)" },
-		{ LR"(Explorer Context Menu/HKEY_CLASSES_ROOT\Folder\shell)" },
-		{ LR"(Explorer Context Menu/HKEY_CLASSES_ROOT\Folder\shellex\ContextMenuHandlers)" },
-		{ LR"(Explorer Context Menu/HKEY_CLASSES_ROOT\Directory\shell)" },
-		{ LR"(Explorer Context Menu/HKEY_CLASSES_ROOT\Directory\Background\shell)" },
-		{ LR"(Explorer Context Menu/HKEY_CLASSES_ROOT\Directory\Background\shellex\ContextMenuHandlers)" },
-		{ L"Current Version", LR"(HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion)" },
-		{ L"Current Version (32 bit)", LR"(HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows NT\CurrentVersion)" },
-		{ L"Software (Current User)", LR"(HKEY_CURRENT_USER\SOFTWARE)" },
-		{ L"Software (Current User) (32-bit)", LR"(HKEY_CURRENT_USER\SOFTWARE\Wow6432Node)" },
-		{ L"Software (Local Machine)", LR"(HKEY_LOCAL_MACHINE\SOFTWARE)" },
-		{ L"Software (Local Machine) (32-bit)", LR"(HKEY_LOCAL_MACHINE\SOFTWARE\Wow6432Node)" },
-	};
-	if (m_Locations.GetCount() < _countof(locations)) {
-		for (const auto& [name, path] : locations)
+	if (m_Locations.GetCount() == 0) {
+		const struct {
+			PCWSTR name;
+			PCWSTR path;
+		} locations[] = {
+			{ L"Services", LR"(HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services)" },
+			{ L"Hardware", LR"(HKEY_LOCAL_MACHINE\System\CurrentControlSet\Enum)" },
+			{ L"Device Classes", LR"(HKEY_LOCAL_MACHINE\System\CurrentControlSet\Control\Class)" },
+			{ L"Hive List", LR"(HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\hivelist)" },
+			{ L"Image File Execution Options", LR"(HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\Image File Execution Options)" },
+			{ LR"(Explorer Context Menu/HKEY_CLASSES_ROOT\*\shell)" },
+			{ LR"(Explorer Context Menu/HKEY_CLASSES_ROOT\*\shellex)" },
+			{ LR"(Explorer Context Menu/HKEY_CLASSES_ROOT\AllFileSystemObjects\ShellEx\ContextMenuHandlers)" },
+			{ LR"(Explorer Context Menu/HKEY_CLASSES_ROOT\Folder\shell)" },
+			{ LR"(Explorer Context Menu/HKEY_CLASSES_ROOT\Folder\shellex\ContextMenuHandlers)" },
+			{ LR"(Explorer Context Menu/HKEY_CLASSES_ROOT\Directory\shell)" },
+			{ LR"(Explorer Context Menu/HKEY_CLASSES_ROOT\Directory\Background\shell)" },
+			{ LR"(Explorer Context Menu/HKEY_CLASSES_ROOT\Directory\Background\shellex\ContextMenuHandlers)" },
+			{ L"Current Version", LR"(HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion)" },
+			{ L"Current Version (32 bit)", LR"(HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows NT\CurrentVersion)" },
+			{ L"Software (Current User)", LR"(HKEY_CURRENT_USER\SOFTWARE)" },
+			{ L"Software (Current User) (32-bit)", LR"(HKEY_CURRENT_USER\SOFTWARE\Wow6432Node)" },
+			{ L"Software (Local Machine)", LR"(HKEY_LOCAL_MACHINE\SOFTWARE)" },
+			{ L"Software (Local Machine) (32-bit)", LR"(HKEY_LOCAL_MACHINE\SOFTWARE\Wow6432Node)" },
+		};
+
+		for (auto [name, path] : locations) {
+			if (path == nullptr)
+				path = wcschr(name, L'/') + 1;
 			m_Locations.Add(name, path);
-		m_Locations.Save();
+		}
 	}
 
 	int i = 0;
@@ -2385,16 +2388,14 @@ void CMainFrame::InitLocations() {
 			hSubMenu.AppendMenu(MF_BYPOSITION, ID_LOCATION_FIRST + i, name2);
 			replace.push_back({ name, name2 });
 		}
-		else if(hSubMenu) {
+		else if (hSubMenu) {
 			hSubMenu.Detach();
 		}
-		if(!hSubMenu)
+		if (!hSubMenu)
 			menu.AppendMenu(MF_BYPOSITION, ID_LOCATION_FIRST + i, name);
 		i++;
 	}
-
-	for (auto& r : replace)
-		m_Locations.Replace(r.first, r.second);
+	AddSubMenu(menu);
 }
 
 HTREEITEM CMainFrame::BuildKeyPath(const CString& path, bool accessible) {
@@ -2504,7 +2505,7 @@ void CMainFrame::UpdateFilter() {
 		m_Items.Filter(nullptr);
 	else {
 		auto filter = [&](auto& item, int index) {
-			if (index == 0 && m_Settings.ShowKeysInList())
+			if (index == 0 && AppSettings::Get().ShowKeysInList())
 				return true;
 
 			CString sname(item.Name);
@@ -2529,7 +2530,7 @@ void CMainFrame::UpdateList(bool newLocation) {
 		m_Navigation.Add(hItem);
 	m_NewLocation = false;
 	auto& path = m_CurrentPath;
-	m_Settings.LastKey((PCWSTR)path);
+	AppSettings::Get().LastKey((PCWSTR)path);
 
 	SetStatusText(path);
 
@@ -2547,7 +2548,7 @@ void CMainFrame::UpdateList(bool newLocation) {
 	if (hItem == m_hRealReg)
 		m_CurrentKey.Attach(Registry::OpenRealRegistryKey());
 
-	if (m_Settings.ShowKeysInList() && (hItem == m_hStdReg || hItem == m_hRealReg || (GetNodeData(hItem) & NodeType::RemoteRegistry) == NodeType::RemoteRegistry)) {
+	if (AppSettings::Get().ShowKeysInList() && (hItem == m_hStdReg || hItem == m_hRealReg || (GetNodeData(hItem) & NodeType::RemoteRegistry) == NodeType::RemoteRegistry)) {
 		// special case for root of registry
 		for (hItem = m_Tree.GetChildItem(hItem); hItem; hItem = m_Tree.GetNextSiblingItem(hItem)) {
 			RegistryItem item;
@@ -2571,11 +2572,11 @@ void CMainFrame::UpdateList(bool newLocation) {
 	}
 
 	if (!m_CurrentPath.IsEmpty()) {
-		m_CurrentKey = Registry::OpenKey(m_CurrentPath, KEY_QUERY_VALUE | (m_Settings.ShowKeysInList() ? KEY_ENUMERATE_SUB_KEYS : 0));
+		m_CurrentKey = Registry::OpenKey(m_CurrentPath, KEY_QUERY_VALUE | (AppSettings::Get().ShowKeysInList() ? KEY_ENUMERATE_SUB_KEYS : 0));
 		ATLASSERT(m_CurrentKey.IsValid());
 	}
 
-	if (m_Settings.ShowKeysInList()) {
+	if (AppSettings::Get().ShowKeysInList()) {
 		//
 		// insert up directory
 		//

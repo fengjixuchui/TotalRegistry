@@ -16,6 +16,7 @@
 #include "SortedFilteredVector.h"
 #include "QuickFilterBar.h"
 #include "NavigationManager.h"
+#include <CustomSplitterWindow.h>
 
 class CFindAllDlg;
 
@@ -69,7 +70,6 @@ public:
 
 	// IMainFrame
 	HWND GetHwnd() const override;
-	AppSettings& GetSettings() override;
 	void OnFindNext(PCWSTR path, PCWSTR name, PCWSTR data) override;
 	void OnFindStart();
 	void OnFindEnd(bool cancelled);
@@ -162,6 +162,7 @@ public:
 		COMMAND_ID_HANDLER(ID_KEY_JUMPTOHIVEFILE, OnJumpToHiveFile)
 		COMMAND_ID_HANDLER(ID_KEY_ADDBOOKMARK, OnAddBookmark)
 		COMMAND_ID_HANDLER(ID_DELETE_BOOKMARK, OnDeleteBookmark)
+		COMMAND_ID_HANDLER(ID_LOCATIONS_MANAGE, OnManageLocations)
 		MESSAGE_HANDLER(WM_SHOWWINDOW, OnShowWindow)
 		MESSAGE_HANDLER(WM_CREATE, OnCreate)
 		MESSAGE_HANDLER(WM_DESTROY, OnDestroy)
@@ -291,6 +292,7 @@ private:
 	LRESULT OnViewGoUp(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
 	LRESULT OnAddBookmark(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
 	LRESULT OnDeleteBookmark(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
+	LRESULT OnManageLocations(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
 
 	void InitCommandBar();
 	void InitToolBar(CToolBarCtrl& tb, int size = 24);
@@ -334,7 +336,7 @@ private:
 	LocalClipboard m_Clipboard;
 	mutable RegistryKey m_CurrentKey;
 	CString m_CurrentPath;
-	CSplitterWindow m_MainSplitter;
+	CCustomSplitterWindow m_MainSplitter;
 	CQuickFilterBar m_QuickFilter;
 	CMultiPaneStatusBarCtrl m_StatusBar;
 	CListViewCtrl m_List;
@@ -345,7 +347,6 @@ private:
 	CTreeItem m_hLocalRoot, m_hStdReg, m_hRealReg, m_hBookmarks;
 	NodeType m_CurrentNodeType{ NodeType::None };
 	int m_CurrentSelectedItem{ -1 };
-	AppSettings m_Settings;
 	Operation m_CurrentOperation{ Operation::None };
 	CFindDlg m_FindDlg;
 	CEdit m_QuickSearch;
