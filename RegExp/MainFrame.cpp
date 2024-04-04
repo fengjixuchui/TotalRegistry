@@ -522,9 +522,9 @@ LRESULT CMainFrame::OnDestroy(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*
 	//
 	// gather bookmarks
 	//
-	std::vector<CString> bookmarks;
+	std::vector<std::wstring> bookmarks;
 	for (auto& [name, _] : TreeHelper(m_Tree).GetChildItems(m_hBookmarks))
-		bookmarks.push_back(name);
+		bookmarks.push_back((PCWSTR)name);
 	AppSettings::Get().Bookmarks(bookmarks);
 
 	AppSettings::Get().ReadOnly(m_ReadOnly);
@@ -620,13 +620,21 @@ LRESULT CMainFrame::OnBuildTree(UINT, WPARAM, LPARAM, BOOL&) {
 
 
 	if (!m_StartKey.IsEmpty()) {
+		if (m_StartKey.Left(2) == L"\\\\") {
+			int start = m_StartKey.Find(L"\\", 2);
+			if (start == -1)
+				start = m_StartKey.GetLength();
+
+			auto remotename = m_StartKey.Mid(2, start - 2);
+			ConnectRemoteRegistry(remotename);
+		}
+
 		auto hItem = GotoKey(m_StartKey);
 		if (!hItem) {
 			AtlMessageBox(m_hWnd, (PCWSTR)(L"Failed to locate key " + m_StartKey), IDS_APP_TITLE, MB_ICONWARNING);
 		}
 	}
-
-	if (!m_LastKey.IsEmpty())
+	else if (!m_LastKey.IsEmpty())
 		GotoKey(m_LastKey);
 
 	m_Tree.SetFocus();
@@ -669,9 +677,15 @@ LRESULT CMainFrame::OnListItemChanged(int, LPNMHDR, BOOL&) {
 }
 
 LRESULT CMainFrame::OnViewRefresh(WORD, WORD, HWND, BOOL&) {
-	RefreshFull(m_hStdReg);
-	RefreshFull(m_hRealReg);
-	UpdateList();
+	auto path = GetCurrentKeyPath();
+	TreeHelper th(m_Tree);
+	th.DoForEachItem(m_hStdReg, 0, [this](auto hItem, auto state) {
+		RefreshItem(hItem);
+		});
+	th.DoForEachItem(m_hRealReg, 0, [this](auto hItem, auto state) {
+		RefreshItem(hItem);
+		});
+	GotoKey(path);
 	return 0;
 }
 
@@ -682,6 +696,7 @@ LRESULT CMainFrame::OnTreeItemExpanding(int, LPNMHDR hdr, BOOL&) {
 	m_Tree.GetItemText(m_Tree.GetChildItem(h), text);
 	if (text == L"\\\\") {
 		m_Tree.DeleteItem(m_Tree.GetChildItem(h));
+
 		CWaitCursor wait;
 		ExpandItem(h);
 	}
@@ -1085,6 +1100,36 @@ LRESULT CMainFrame::OnKnownLocation(WORD, WORD id, HWND, BOOL&) {
 	auto menu = (CMenuHandle)GetMenu();
 	menu.GetMenuString(id, name.GetBufferSetLength(256), 256, MF_BYCOMMAND);
 	auto path = m_Locations.GetPathByName(name);
+	CString addressBar;
+	m_AddressBar.GetWindowText(addressBar);
+	if (addressBar.Left(2) == L"\\\\") {
+		int start = addressBar.Find(L"\\", 2);
+		if (start == -1)
+			start = addressBar.GetLength();
+
+		auto remotename = addressBar.Mid(2, start - 2);
+
+		int startPath = path.Find(L"\\", 0);
+		auto hkcuKey = path.Mid(0, startPath);
+
+		if (hkcuKey == L"HKEY_CURRENT_USER") {
+			start = addressBar.Find(L"\\", start + 2);
+			int startUserKey = start + 1;
+			start = addressBar.Find(L"\\", start + 2);
+
+			if (start == -1)
+				start = addressBar.GetLength();
+
+			auto userKey = addressBar.Mid(startUserKey, start - startUserKey);
+			if (userKey.Find(L"S-1-5") == 0) {
+				path = "HKEY_USERS\\" + userKey + path.Mid(startPath, path.GetLength());
+			}
+		}
+
+		GotoKey("\\\\"+ remotename + "\\" + path);
+
+		return 0;
+	}
 	TreeHelper th(m_Tree);
 	auto hItem = th.FindItem(m_hStdReg, path);
 	if (hItem) {
@@ -1092,7 +1137,7 @@ LRESULT CMainFrame::OnKnownLocation(WORD, WORD id, HWND, BOOL&) {
 		m_Tree.SelectItem(hItem);
 	}
 	else {
-		AtlMessageBox(m_hWnd, std::format(L"Location {} not found", name).c_str(), IDS_APP_TITLE, MB_ICONWARNING);
+		AtlMessageBox(m_hWnd, std::format(L"Location {} not found", (PCWSTR)name).c_str(), IDS_APP_TITLE, MB_ICONWARNING);
 		return 0;
 	}
 	return 0;
@@ -1455,23 +1500,7 @@ LRESULT CMainFrame::OnViewStatusBar(WORD, WORD id, HWND, BOOL&) {
 LRESULT CMainFrame::OnConnectRemote(WORD, WORD, HWND, BOOL&) {
 	CConnectRegistryDlg dlg(this);
 	if (dlg.DoModal() == IDOK) {
-		if (TreeHelper(m_Tree).FindChild(m_Tree.GetRootItem(), dlg.GetComputerName())) {
-			AtlMessageBox(m_hWnd, (PCWSTR)(L"Already connected to computer '" + dlg.GetComputerName() + L"'. Disconnect first if you'd like to reconnect."),
-				IDS_APP_TITLE, MB_ICONWARNING);
-			return 0;
-		}
-		CWaitCursor wait;
-		if (!Registry::ConnectRegistry(dlg.GetComputerName())) {
-			DisplayError(L"Failed to connect to remote computer");
-			return 0;
-		}
-
-		auto hComputer = InsertTreeItem(dlg.GetComputerName(), 14, NodeType::RemoteRegistry, TVI_ROOT, TVI_LAST);
-		auto Item = InsertKeyItem(hComputer, L"HKEY_LOCAL_MACHINE", NodeType::Predefined | NodeType::Key);
-		Item = InsertKeyItem(hComputer, L"HKEY_USERS", NodeType::Predefined | NodeType::Key);
-		m_Tree.Expand(hComputer, TVE_EXPAND);
-		m_Tree.SelectItem(hComputer);
-		m_Tree.EnsureVisible(hComputer);
+		ConnectRemoteRegistry(dlg.GetComputerName());
 	}
 	return 0;
 }
@@ -1611,6 +1640,14 @@ LRESULT CMainFrame::OnManageLocations(WORD, WORD, HWND, BOOL&) {
 	return 0;
 }
 
+LRESULT CMainFrame::OnViewSelectAll(WORD, WORD, HWND, BOOL&) {
+	m_List.SelectAllItems(true);
+	if (!m_Items.empty() && m_Items[0].Name == L"..")
+		m_List.SetItemState(0, 0, LVIS_SELECTED);
+
+	return 0;
+}
+
 LRESULT CMainFrame::OnListEndEdit(int /*idCtrl*/, LPNMHDR pnmh, BOOL& /*bHandled*/) {
 	auto lv = (NMLVDISPINFO*)pnmh;
 	if (lv->item.pszText == nullptr) {
@@ -1680,6 +1717,28 @@ LRESULT CMainFrame::OnListEndEdit(int /*idCtrl*/, LPNMHDR pnmh, BOOL& /*bHandled
 	}
 	UpdateUI();
 	return rv;
+}
+
+void CMainFrame::ConnectRemoteRegistry(CString hostname) {
+	hostname = hostname.MakeUpper();
+
+	if (TreeHelper(m_Tree).FindChild(m_Tree.GetRootItem(), hostname)) {
+		AtlMessageBox(m_hWnd, (PCWSTR)(L"Already connected to computer '" + hostname + L"'. Disconnect first if you'd like to reconnect."),
+			IDS_APP_TITLE, MB_ICONWARNING);
+		return;
+	}
+	CWaitCursor wait;
+	if (!Registry::ConnectRegistry(hostname)) {
+		DisplayError(L"Failed to connect to remote computer");
+		return;
+	}
+
+	auto hComputer = InsertTreeItem(hostname, 14, NodeType::RemoteRegistry, TVI_ROOT, TVI_LAST);
+	auto Item = InsertKeyItem(hComputer, L"HKEY_LOCAL_MACHINE", NodeType::Predefined | NodeType::Key);
+	Item = InsertKeyItem(hComputer, L"HKEY_USERS", NodeType::Predefined | NodeType::Key);
+	m_Tree.Expand(hComputer, TVE_EXPAND);
+	m_Tree.SelectItem(hComputer);
+	m_Tree.EnsureVisible(hComputer);
 }
 
 void CMainFrame::InitCommandBar() {
@@ -1781,7 +1840,6 @@ void CMainFrame::InitToolBar(CToolBarCtrl& tb, int size) {
 CTreeItem CMainFrame::InsertTreeItem(PCWSTR text, int image, NodeType type, HTREEITEM hParent, HTREEITEM hAfter) {
 	return InsertTreeItem(text, image, image, type, hParent, hAfter);
 }
-
 CTreeItem CMainFrame::InsertTreeItem(PCWSTR text, int image, int selectedImage, NodeType type, HTREEITEM hParent, HTREEITEM hAfter) {
 	auto item = m_Tree.InsertItem(text, image, selectedImage, hParent, hAfter);
 	item.SetData(static_cast<DWORD_PTR>(type));
@@ -1790,7 +1848,7 @@ CTreeItem CMainFrame::InsertTreeItem(PCWSTR text, int image, int selectedImage, 
 
 HTREEITEM CMainFrame::BuildTree(HTREEITEM hRoot, HKEY hKey, PCWSTR name) {
 	if (name) {
-		hRoot = m_Tree.InsertItem(name, 3, 2, hRoot, TVI_LAST);
+		hRoot = m_Tree.InsertItem(name, 3, 2, hRoot, TVI_SORT);
 		auto path = GetFullNodePath(hRoot);
 		if (Registry::IsHiveKey(path)) {
 			m_Tree.SetItemImage(hRoot, 6, 6);
@@ -1804,14 +1862,22 @@ HTREEITEM CMainFrame::BuildTree(HTREEITEM hRoot, HKEY hKey, PCWSTR name) {
 	else {
 		CRegKey key(hKey);
 		Registry::EnumSubKeys(key, [&](auto name, const auto& ft) {
+			TreeHelper th(m_Tree);
+			//auto hItem = th.FindChild(hRoot, name);
+
+			//if(!hItem)
 			auto hItem = m_Tree.InsertItem(name, 3, 2, hRoot, TVI_SORT);
+
 			SetNodeData(hItem, NodeType::Key);
 			CRegKey subKey;
 			auto error = subKey.Open(hKey, name, KEY_QUERY_VALUE | KEY_ENUMERATE_SUB_KEYS);
 			if (error == ERROR_SUCCESS) {
 				DWORD subkeys = Registry::GetSubKeyCount(subKey);
 				if (subkeys) {
-					m_Tree.InsertItem(L"\\\\", hItem, TVI_LAST);
+					//auto hItem2 = th.FindChild(hItem, L"\\\\");
+
+					//if (!hItem2)
+					m_Tree.InsertItem(L"\\\\", hItem, TVI_SORT);
 				}
 				subKey.Close();
 				CString linkPath;
@@ -1844,7 +1910,7 @@ void CMainFrame::InitTree() {
 	m_hLocalRoot = InsertTreeItem(name + CString(L" (Local)"), 1, NodeType::Machine, TVI_ROOT, TVI_LAST);
 	m_hBookmarks = InsertTreeItem(L"Bookmarks", 15, NodeType::Bookmarks, m_hLocalRoot, TVI_LAST);
 	for (auto& bm : AppSettings::Get().Bookmarks()) {
-		InsertKeyItem(m_hBookmarks, bm, NodeType::Key | NodeType::Bookmark);
+		InsertKeyItem(m_hBookmarks, bm.c_str(), NodeType::Key | NodeType::Bookmark);
 	}
 	m_hStdReg = InsertTreeItem(L"Standard Registry", 0, NodeType::StandardRoot, m_hLocalRoot, TVI_LAST);
 	m_hRealReg = InsertTreeItem(L"REGISTRY", 11, NodeType::RegistryRoot | NodeType::Predefined | NodeType::Key, m_hLocalRoot, TVI_LAST);
@@ -1924,7 +1990,7 @@ void CMainFrame::RefreshFull(HTREEITEM hItem) {
 			}
 			else {
 				// really expanded
-				RefreshFull(hItem);
+				//RefreshFull(hItem);
 				auto key = Registry::OpenKey(GetFullNodePath(hItem), KEY_QUERY_VALUE | KEY_ENUMERATE_SUB_KEYS);
 				if (key) {
 					auto keys = th.GetChildItems(hItem);
@@ -2094,15 +2160,18 @@ CString CMainFrame::GetValueDetails(const RegistryItem& item) const {
 }
 
 bool CMainFrame::RefreshItem(HTREEITEM hItem) {
-	auto expanded = m_Tree.GetItemState(hItem, TVIS_EXPANDED);
-	m_Tree.LockWindowUpdate();
+	auto expanded = m_Tree.GetItemState(hItem, TVIS_EXPANDED | TVIS_EXPANDEDONCE);
+	if (expanded == 0)
+		return false;
+
+	m_Tree.SetRedraw(FALSE);
 	m_Tree.Expand(hItem, TVE_COLLAPSE | TVE_COLLAPSERESET);
 	TreeHelper th(m_Tree);
 	th.DeleteChildren(hItem);
 	m_Tree.InsertItem(L"\\\\", hItem, TVI_LAST);
-	if (expanded)
+	if (expanded & TVIS_EXPANDED)
 		m_Tree.Expand(hItem, TVE_EXPAND);
-	m_Tree.LockWindowUpdate(FALSE);
+	m_Tree.SetRedraw();
 	UpdateList();
 	return true;
 }
@@ -2401,7 +2470,28 @@ void CMainFrame::InitLocations() {
 HTREEITEM CMainFrame::BuildKeyPath(const CString& path, bool accessible) {
 	auto hItem = path[0] == L'\\' ? m_hRealReg : m_hStdReg;
 	CString name;
-	int start = path[0] == L'\\' ? 10 : 0;
+
+	int start = path[0] == L'\\' ? 9 : 0;
+
+	if (path.Left(2) == L"\\\\") {
+		// remote Registry
+		start = path.Find(L"\\", 2);
+		auto remotename = path.Mid(2, start - 2);
+		hItem = m_Tree.GetRootItem().GetNextSibling();
+		
+		while (hItem) {
+			CString text;
+			m_Tree.GetItemText(hItem, text);
+			if (text.CompareNoCase(remotename) == 0)
+				break;
+			
+			hItem = m_Tree.GetNextSiblingItem(hItem);
+		}
+
+		if(!hItem)
+			return nullptr;
+	}
+
 	TreeHelper th(m_Tree);
 	while (!(name = path.Tokenize(L"\\", start)).IsEmpty()) {
 		auto hChild = th.FindChild(hItem, name);
@@ -2504,7 +2594,7 @@ void CMainFrame::UpdateFilter() {
 	if (stext.IsEmpty())
 		m_Items.Filter(nullptr);
 	else {
-		auto filter = [&](auto& item, int index) {
+		auto filter = [&](auto& item, size_t index) {
 			if (index == 0 && AppSettings::Get().ShowKeysInList())
 				return true;
 
